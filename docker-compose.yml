@@ -12,19 +12,20 @@ services:
     stdin_open: true
     tty: true
 
-  ground_station:
+  sensor-manager:
     build:
-      context: ./ground_station
+      context: ./sensor_manager
       dockerfile: Dockerfile
-    container_name: ground-station
+    container_name: sensor-manager
     depends_on:
       - cfs
+    ports:
+      - "8501:8501"
     networks:
       - cfs-net
     environment:
       - CFS_HOST=cfs-flight
       - CFS_CMD_PORT=1234
-      - CFS_TLM_PORT=2234
 
 networks:
   cfs-net:

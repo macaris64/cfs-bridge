@@ -1,15 +1,12 @@
 """
-CFS-Bridge Integration Test
+Sensor Manager Integration Test
 
-End-to-end test that verifies the Python ground station can send a
+End-to-end test that verifies the sensor manager can send a
 CCSDS-wrapped command to NASA cFS via CI_LAB, and that the bridge_app
 receives and logs it via CFE_ES_WriteToSysLog.
 
 Run from the host machine after `docker compose up -d`:
-    python integration_test.py
-
-Or via pytest:
-    python -m pytest integration_test.py -v
+    python -m pytest sensor_manager/tests/integration_test.py -v
 """
 
 import os
@@ -18,7 +15,7 @@ import subprocess
 import sys
 import time
 
-from ccsds_utils import pack_cmd_packet
+from sensor_manager.core.ccsds_utils import pack_cmd_packet
 
 # Test configuration
 CFS_HOST = os.environ.get('CFS_HOST', 'localhost')
@@ -136,7 +133,7 @@ def test_bridge_receives_noop():
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("CFS-Bridge Integration Test")
+    print("Sensor Manager Integration Test")
     print("=" * 60)
 
     try:

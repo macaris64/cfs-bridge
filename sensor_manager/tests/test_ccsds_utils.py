@@ -3,7 +3,7 @@
 import struct
 import pytest
 
-from ccsds_utils import (
+from sensor_manager.core.ccsds_utils import (
     CCSDSPrimaryHeader,
     CCSDS_TYPE_CMD,
     CCSDS_TYPE_TLM,
@@ -173,7 +173,7 @@ class TestChecksum:
 
     def test_compute_checksum_basic(self):
         """compute_checksum on known bytes should return correct value."""
-        # All zeros: XOR with 0xFF start → 0xFF
+        # All zeros: XOR with 0xFF start -> 0xFF
         assert compute_checksum(b'\x00\x00\x00') == 0xFF
         # Single byte 0xFF: 0xFF ^ 0xFF = 0x00
         assert compute_checksum(b'\xff') == 0x00

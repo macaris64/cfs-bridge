@@ -2,11 +2,11 @@
 
 High-Fidelity Spacecraft Software Integration Project
 
-## 🎯 Overview
+## Overview
 
-This project establishes a bidirectional communication bridge between NASA’s Core Flight System (cFS) and a Python-based Ground Station application. The core objective is to demonstrate how a modern high-level language can interact with flight-critical software using the industry-standard CCSDS (Consultative Committee for Space Data Systems) Space Packet Protocol.
+This project establishes a bidirectional communication bridge between NASA's Core Flight System (cFS) and a Python-based Sensor Manager application. The Sensor Manager acts as an environment simulator, injecting simulated sensor readings (radiation, thermal, etc.) into the cFS firmware using the industry-standard CCSDS (Consultative Committee for Space Data Systems) Space Packet Protocol.
 
-## 🏗️ System Architecture
+## System Architecture
 
 1. On-Board Segment (NASA cFS):
 
@@ -16,9 +16,13 @@ This project establishes a bidirectional communication bridge between NASA’s C
 
 - A custom C-module acts as the "Ingest/Egress" point for external UDP traffic.
 
-2. Ground Segment (Python App):
+2. Sensor Manager (Python / Streamlit):
 
-- A lightweight Python application responsible for telemetry visualization and command generation.
+- An extensible Python framework for simulating spacecraft environment sensors.
+
+- Streamlit-based UI for real-time sensor value injection.
+
+- Plugin architecture: drop a new sensor class into `sensors/` and it auto-discovers.
 
 - Uses the struct library to perform binary serialization of CCSDS headers.
 
@@ -28,7 +32,7 @@ This project establishes a bidirectional communication bridge between NASA’s C
 
 - Data Format: CCSDS Space Packet (Primary Header + Payload).
 
-## 📡 Technical Specifications
+## Technical Specifications
 
 ### The CCSDS Bridge
 
@@ -42,25 +46,28 @@ The communication relies on the CCSDS Space Packet Protocol. Every packet sent f
 
 ### Network Configuration
 
-| Service       | Port | Protocol |Description|
-|---------------|------|-----|-----------|
-| cFS Command   | 1234 | UDP | Commands sent from Python -> cFS |
-| cFS Telemetry | 2234 | UDP | Data sent from cFS -> Python     |
+| Service              | Port | Protocol | Description                       |
+|----------------------|------|----------|-----------------------------------|
+| cFS Command Ingest   | 1234 | UDP      | Sensor data sent from Python -> cFS |
+| Sensor Manager UI    | 8501 | TCP      | Streamlit web interface            |
 
-### 🛠️ Tech Stack
+### Tech Stack
 
 - Core: NASA cFS (Core Flight Executive, OSAL, PSP).
-- Language: C (Flight Software) & Python 3.10+ (Ground Station).
+- Language: C (Flight Software) & Python 3.10+ (Sensor Manager).
 - DevOps: Docker & Docker Compose for orchestration.
+- UI: Streamlit for real-time sensor simulation.
 - Communication: BSD Sockets & CCSDS Standards.
 
-### 🚀 Key Goals
+### Key Goals
 
-- [ ] Containerization: Successfully compile and run cFS inside a Docker environment.
+- [x] Containerization: Successfully compile and run cFS inside a Docker environment.
 
-- [ ] Binary Packing: Build a Python utility to generate valid 48-bit CCSDS headers.
+- [x] Binary Packing: Build a Python utility to generate valid 48-bit CCSDS headers.
 
-- [ ] Software Bus Integration: Verify that a packet sent from Python is received and logged by the cFS TO_LAB or SAMPLE_APP.
+- [x] Software Bus Integration: Verify that a packet sent from Python is received and logged by the cFS TO_LAB or SAMPLE_APP.
+
+- [x] Sensor Manager Framework: Extensible sensor simulation with Streamlit UI and auto-discovery.
 
 - [ ] Telemetry Feedback: Receive a "Heartbeat" packet from cFS and parse it in the Python console.
 

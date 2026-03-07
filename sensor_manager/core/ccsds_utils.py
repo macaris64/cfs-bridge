@@ -20,6 +20,7 @@ On-wire format (Big-Endian):
 """
 
 import struct
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -129,6 +130,46 @@ def pack_cmd_packet(
     # Rebuild with correct checksum
     cmd_sec_hdr = struct.pack('BB', func_code & 0x7F, chksum)
     return pri_hdr + cmd_sec_hdr + payload
+
+
+def pack_telemetry_packet(
+    mid: int,
+    payload: bytes = b'',
+    seq_count: int = 0,
+    seconds: Optional[int] = None,
+    subseconds: int = 0,
+) -> bytes:
+    """Pack a complete CCSDS telemetry packet.
+
+    Builds a telemetry packet with a 6-byte secondary header containing
+    a timestamp (Seconds + Subseconds).  The MID value is used directly
+    as the StreamId word — for cFS telemetry the MID already encodes
+    Version=0, Type=0, SecHdr=1.
+
+    Args:
+        mid: Message ID (used as StreamId, e.g. 0x0880 for TO_LAB_TLM)
+        payload: Telemetry payload bytes
+        seq_count: Sequence counter value
+        seconds: Timestamp seconds since epoch (defaults to int(time.time()))
+        subseconds: Timestamp sub-seconds (16-bit)
+
+    Returns:
+        Complete telemetry packet bytes.
+    """
+    if seconds is None:
+        seconds = int(time.time())
+
+    total_length = CCSDS_PRI_HDR_SIZE + CCSDS_TLM_SEC_HDR_SIZE + len(payload)
+    data_length = total_length - 7
+
+    # Primary header — MID encodes version/type/sec-hdr/APID
+    sequence = (CCSDS_SEQ_STANDALONE << 14) | (seq_count & 0x3FFF)
+    pri_hdr = struct.pack('!HHH', mid, sequence, data_length)
+
+    # Telemetry secondary header: 4-byte seconds + 2-byte subseconds
+    tlm_sec_hdr = struct.pack('!IH', seconds & 0xFFFFFFFF, subseconds & 0xFFFF)
+
+    return pri_hdr + tlm_sec_hdr + payload
 
 
 def unpack_primary_header(data: bytes) -> dict:
