@@ -5,4 +5,6 @@ CFE_APP, ci_lab,      CI_LAB_AppMain,     CI_LAB,       60,   16384, 0x0, 0;
 CFE_APP, to_lab,      TO_LAB_AppMain,     TO_LAB,       70,   16384, 0x0, 0;
 CFE_APP, sch_lab,     SCH_LAB_AppMain,    SCH_LAB,      80,   16384, 0x0, 0;
 CFE_APP, bridge_app,  BRIDGE_APP_Main,    BRIDGE_APP,   90,   16384, 0x0, 0;
+CFE_APP, rad_app,     RAD_APP_Main,       RAD_APP,      91,   16384, 0x0, 0;
+CFE_APP, therm_app,   THERM_APP_Main,     THERM_APP,    92,   16384, 0x0, 0;
 !

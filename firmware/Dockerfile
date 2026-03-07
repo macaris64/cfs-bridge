@@ -32,8 +32,10 @@ RUN cp cfe/cmake/Makefile.sample Makefile \
 COPY defs/targets.cmake          sample_defs/targets.cmake
 COPY defs/cpu1_cfe_es_startup.scr sample_defs/cpu1_cfe_es_startup.scr
 
-# Copy custom bridge_app into the apps directory
+# Copy custom applications into the apps directory
 COPY apps/bridge_app/ apps/bridge_app/
+COPY apps/rad_app/    apps/rad_app/
+COPY apps/therm_app/  apps/therm_app/
 
 # Patch TO_LAB subscription table to enable telemetry forwarding
 COPY patches/to_lab_sub.c apps/to_lab/fsw/tables/to_lab_sub.c

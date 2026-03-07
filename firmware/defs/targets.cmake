@@ -9,8 +9,8 @@
 SET(MISSION_NAME "SampleMission")
 SET(SPACECRAFT_ID 0x42)
 
-# Apps built for every target: sample_app, sample_lib, and our bridge_app
-list(APPEND MISSION_GLOBAL_APPLIST sample_app sample_lib bridge_app)
+# Apps built for every target
+list(APPEND MISSION_GLOBAL_APPLIST sample_app sample_lib bridge_app rad_app therm_app)
 
 SET(FT_INSTALL_SUBDIR "host/functional-test")
 

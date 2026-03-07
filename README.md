@@ -5,25 +5,42 @@ A bidirectional bridge between NASA's Core Flight System (cFS) and a Python Sens
 ## Architecture
 
 ```
- Sensor Manager (Python)                    Flight Software (cFS)
-+-------------------------+     UDP      +---------------------------+
-|                         |   :1234      |  CI_LAB (Command Ingest)  |
-|  core/ccsds_utils.py    |------------>|       |                    |
-|  (pack CCSDS packets)   |  sensor     |       v  Software Bus     |
-|                         |  data       |  +----------+----------+  |
-|  manager_app.py         |             |  | RAD_APP  | THERM_APP|  |
-|  (Streamlit UI)         |             |  | (0x1882) | (0x1883) |  |
-|                         |             |  +----------+----------+  |
-|  sensors/               |             |       ^                   |
-|  (radiation, thermal)   |             |  BRIDGE_APP (logger)      |
-+-------------------------+             +---------------------------+
+ Sensor Manager (Python)                       Flight Software (cFS)
++-------------------------+     UDP       +------------------------------------+
+|                         |   :1234       |  CI_LAB (Command Ingest)           |
+|  core/ccsds_utils.py    |------------->|         |                           |
+|  (pack CCSDS packets)   |  sensor      |         v  Software Bus             |
+|                         |  data        |  +------------+  +------------+     |
+|  manager_app.py         |              |  |  RAD_APP   |  | THERM_APP  |     |
+|  (Streamlit UI)         |              |  |  (0x1882)  |  |  (0x1883)  |     |
+|                         |              |  +------+-----+  +------+-----+     |
+|  sensors/               |              |         |               |           |
+|  (radiation, thermal)   |              |    FDIR | >150 mSv/h    | FDIR      |
+|                         |              |         v               v           |
+|                         |              |  Solar Array     CFE_EVS Critical   |
+|                         |              |  Close Cmd       Event Log          |
+|                         |              |  (0x1890 FC=6)   (>100 C)           |
+|                         |              |                                     |
+|                         |              |  BRIDGE_APP (packet logger)         |
+|                         |              |                                     |
+|                         |  TLM :2234   |  TO_LAB -------> TLM (0x0882,      |
+|                         |<-------------|  (Telemetry Out)   0x0883)          |
++-------------------------+              +------------------------------------+
 ```
 
 ### Communication Flow
 
 1. **Sensor Simulation (Python -> cFS):** The Sensor Manager packs sensor readings into CCSDS command packets and sends via UDP to CI_LAB on port **1234**
-2. **Software Bus Fan-out:** CI_LAB publishes to the cFS Software Bus. Application-specific apps receive commands routed by MID
-3. **Bridge Logging:** `bridge_app` logs every received packet via `CFE_ES_WriteToSysLog`
+2. **Software Bus Fan-out:** CI_LAB publishes to the cFS Software Bus. RAD_APP, THERM_APP, and BRIDGE_APP receive commands routed by MID
+3. **FDIR Processing:** RAD_APP and THERM_APP extract the Big-Endian float payload, evaluate FDIR rules, and take autonomous action
+4. **Telemetry Generation:** Both apps publish processed telemetry packets (with health status) to the Software Bus for downlink via TO_LAB
+
+### FDIR Rules
+
+| Application | Threshold | Action |
+|-------------|-----------|--------|
+| RAD_APP | Radiation > 150.0 mSv/h | Publish Solar Array Close command (MID `0x1890`, FC `6`) |
+| THERM_APP | Temperature > 100.0 C | Log CRITICAL event via `CFE_EVS_SendEvent` |
 
 ### CCSDS Primary Header (6 bytes, Big-Endian)
 
@@ -39,11 +56,18 @@ A bidirectional bridge between NASA's Core Flight System (cFS) and a Python Sens
 cfs-bridge/
   docker-compose.yml              # Orchestrates cFS + sensor manager
   pyproject.toml                  # Pytest config & project metadata
+  check_integration.sh            # End-to-end integration verification script
   firmware/
     Dockerfile                    # Builds cFS on Ubuntu 22.04
-    apps/bridge_app/              # Custom cFS app (subscribes to 0x1882)
+    apps/
+      bridge_app/                 # cFS packet logger (subscribes to 0x1882)
+      rad_app/                    # Radiation monitor + FDIR (subscribes to 0x1882)
+      therm_app/                  # Thermal monitor + FDIR (subscribes to 0x1883)
     defs/                         # Mission config overlays
+      targets.cmake               # Defines all apps in the mission build
+      cpu1_cfe_es_startup.scr     # Application startup sequence
     patches/                      # cFS app patches
+      to_lab_sub.c                # TO_LAB subscription table (TLM forwarding)
     cFS/                          # NASA cFS submodule (unchanged)
   sensor_manager/
     Dockerfile                    # Python 3.10 + Streamlit container
@@ -57,8 +81,8 @@ cfs-bridge/
       mission_registry.py         # Single source of truth for MIDs & FCs
     sensors/
       __init__.py                 # Auto-exports all sensor classes
-      radiation_sensor.py         # Radiation environment sensor (0–1000 rad)
-      thermal_sensor.py           # Thermal sensor (-40–85 °C)
+      radiation_sensor.py         # Radiation environment sensor (0-1000 rad)
+      thermal_sensor.py           # Thermal sensor (-40-85 C)
     tests/
       test_ccsds.py               # CCSDS protocol tests (32 tests)
       test_ccsds_utils.py         # CCSDS utility tests (24 tests)
@@ -86,7 +110,7 @@ docker compose up -d
 ```
 
 This starts:
-- **cfs-flight**: cFS with CI_LAB, TO_LAB, SAMPLE_APP, and BRIDGE_APP
+- **cfs-flight**: cFS with CI_LAB, TO_LAB, BRIDGE_APP, RAD_APP, and THERM_APP
 - **sensor-manager**: Streamlit UI for injecting simulated sensor data into cFS
 
 ### 3. Open the Sensor Manager UI
@@ -95,15 +119,23 @@ Navigate to [http://localhost:8501](http://localhost:8501) in your browser. Use 
 
 ### 4. Verify
 
-Check that cFS booted and bridge_app initialized:
+Check that all apps initialized:
 
 ```bash
-docker logs cfs-flight 2>&1 | grep BRIDGE_APP
+docker logs cfs-flight 2>&1 | grep -E "(BRIDGE_APP|RAD_APP|THERM_APP).*Initialized"
 ```
 
 Expected output:
 ```
 BRIDGE_APP: Initialized. Listening on MID 0x1882
+RAD_APP: Initialized. Listening on CMD MID 0x1882, TLM MID 0x0882
+THERM_APP: Initialized. Listening on CMD MID 0x1883, TLM MID 0x0883
+```
+
+Watch for received sensor data:
+
+```bash
+docker logs -f cfs-flight 2>&1 | grep -E "(RAD_APP|THERM_APP).*\[Pkt"
 ```
 
 ### 5. Run Unit Tests
@@ -111,13 +143,19 @@ BRIDGE_APP: Initialized. Listening on MID 0x1882
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install pytest
+pip install pytest streamlit
 python -m pytest sensor_manager/tests/ -v
 ```
 
-### 6. Run Integration Test
+### 6. Run Integration Verification
 
-Requires Docker containers to be running:
+Automated end-to-end check (builds, starts, sends test packets, verifies FDIR):
+
+```bash
+./check_integration.sh
+```
+
+Or run the Python integration test (requires containers running):
 
 ```bash
 python -m pytest sensor_manager/tests/integration_test.py -v
@@ -128,6 +166,28 @@ python -m pytest sensor_manager/tests/integration_test.py -v
 ```bash
 docker compose down
 ```
+
+## cFS Applications
+
+### RAD_APP (Radiation Monitor)
+
+Subscribes to radiation sensor commands on MID `0x1882`. Extracts the Big-Endian float payload, evaluates FDIR thresholds, and generates telemetry.
+
+- **FDIR**: If radiation > 150.0 mSv/h, publishes a Solar Array Close command (MID `0x1890`, FC `6`) to protect hardware
+- **Telemetry**: Sends processed radiation value + health status on MID `0x0882`
+- **Health Codes**: `0` = NOMINAL, `1` = WARNING (> 100 mSv/h), `2` = CRITICAL (> 150 mSv/h)
+
+### THERM_APP (Thermal Monitor)
+
+Subscribes to thermal sensor commands on MID `0x1883`. Extracts the Big-Endian float payload, evaluates FDIR thresholds, and generates telemetry.
+
+- **FDIR**: If temperature > 100.0 C, logs a CRITICAL event via `CFE_EVS_SendEvent`
+- **Telemetry**: Sends processed temperature value + health status on MID `0x0883`
+- **Health Codes**: `0` = NOMINAL, `1` = WARNING (> 80 C), `2` = CRITICAL (> 100 C)
+
+### BRIDGE_APP (Packet Logger)
+
+Subscribes to MID `0x1882` and logs all received packets via `CFE_ES_WriteToSysLog`. Demonstrates SB fan-out.
 
 ## Sensor Manager Framework
 
@@ -153,12 +213,14 @@ class PressureSensor(BaseSensor):
 
 ## Key Message IDs
 
-| Application     | MID      | Type | Description                |
-|-----------------|----------|------|----------------------------|
-| RADIATION_APP   | `0x1882` | CMD  | Radiation sensor data      |
-| THERMAL_APP     | `0x1883` | CMD  | Thermal sensor data        |
-| SOLAR_ARRAY_APP | `0x1890` | CMD  | Solar array commands       |
-| TO_LAB_TLM      | `0x0880` | TLM  | Housekeeping telemetry     |
+| Application     | MID      | Type | Description                       |
+|-----------------|----------|------|-----------------------------------|
+| RAD_APP         | `0x1882` | CMD  | Radiation sensor data             |
+| THERM_APP       | `0x1883` | CMD  | Thermal sensor data               |
+| SOLAR_ARRAY_APP | `0x1890` | CMD  | Solar array commands              |
+| RAD_APP         | `0x0882` | TLM  | Processed radiation telemetry     |
+| THERM_APP       | `0x0883` | TLM  | Processed thermal telemetry       |
+| TO_LAB          | `0x0880` | TLM  | Housekeeping telemetry            |
 
 ## UDP Port Map
 
