@@ -1,0 +1,3 @@
+[submodule "firmware/cFS"]
+	path = firmware/cFS
+	url = https://github.com/nasa/cFS.git

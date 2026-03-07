@@ -1,0 +1,31 @@
+services:
+  cfs:
+    build:
+      context: ./firmware
+      dockerfile: Dockerfile
+    container_name: cfs-flight
+    privileged: true
+    ports:
+      - "1234:1234/udp"
+    networks:
+      - cfs-net
+    stdin_open: true
+    tty: true
+
+  ground_station:
+    build:
+      context: ./ground_station
+      dockerfile: Dockerfile
+    container_name: ground-station
+    depends_on:
+      - cfs
+    networks:
+      - cfs-net
+    environment:
+      - CFS_HOST=cfs-flight
+      - CFS_CMD_PORT=1234
+      - CFS_TLM_PORT=2234
+
+networks:
+  cfs-net:
+    driver: bridge
