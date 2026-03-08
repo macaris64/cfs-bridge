@@ -25,9 +25,9 @@ from typing import Callable, Optional
 from sensor_manager.core.ccsds_utils import (
     CCSDS_PRI_HDR_SIZE,
     CCSDS_TLM_SEC_HDR_SIZE,
-    unpack_primary_header,
-    unpack_tlm_packet,
 )
+# Avoid package-level import to prevent circular imports with telemetry.processor.
+tlm_parser = None
 
 logging.basicConfig(
     level=logging.INFO,
@@ -227,44 +227,18 @@ class TelemetryReceiver:
         Returns:
             Dictionary with parsed fields.
         """
-        result: dict = {"mid": mid, "mid_hex": f"0x{mid:04X}"}
-
+        # Delegate parsing to central parser module. Import locally to avoid
+        # circular imports between ground_station.telemetry and this module.
         try:
-            tlm = unpack_tlm_packet(data)
-            result["seconds"] = tlm["seconds"]
-            result["subseconds"] = tlm["subseconds"]
-            payload = tlm["payload"]
-        except ValueError:
-            result["raw"] = data.hex()
-            return result
+            from ground_station.telemetry import parser as tlm_parser_local
 
-        if mid == TLM_MID_RAD and len(payload) >= 4:
-            value = struct.unpack("<f", payload[:4])[0]
-            health = payload[4] if len(payload) > 4 else 0
-            health_labels = {0: "NOMINAL", 1: "WARNING", 2: "CRITICAL"}
-            result["type"] = "radiation"
-            result["value"] = value
-            result["health"] = health
-            result["health_label"] = health_labels.get(health, "UNKNOWN")
-
-        elif mid == TLM_MID_THERM and len(payload) >= 4:
-            value = struct.unpack("<f", payload[:4])[0]
-            health = payload[4] if len(payload) > 4 else 0
-            health_labels = {0: "NOMINAL", 1: "WARNING", 2: "CRITICAL"}
-            result["type"] = "thermal"
-            result["value"] = value
-            result["health"] = health
-            result["health_label"] = health_labels.get(health, "UNKNOWN")
-
-        elif mid == CFE_EVS_LONG_EVENT_MSG_MID:
-            result["type"] = "evs"
-            result["event_text"] = self._parse_evs(payload)
-
-        else:
-            result["type"] = "unknown"
-            result["payload_hex"] = payload.hex()
-
-        return result
+            parsed = tlm_parser_local.parse_packet(data)
+        except Exception:
+            parsed = {"raw": data.hex(), "mid": mid, "mid_hex": f"0x{mid:04X}"}
+        # Ensure MID fields are present/consistent
+        parsed.setdefault("mid", mid)
+        parsed.setdefault("mid_hex", f"0x{mid:04X}")
+        return parsed
 
     @staticmethod
     def _parse_evs(payload: bytes) -> str:

@@ -19,6 +19,7 @@ coverage: ## Run tests with coverage report
 		--cov=sensor_manager/core --cov=sensor_manager/sensors \
 		--cov=ground_station \
 		--cov-report=term-missing -v
+		--cov-fail-under=95
 
 # ── Start Mission ─────────────────────────────────────────────────────
 start-mission: build ## Build and start all services

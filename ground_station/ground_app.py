@@ -35,6 +35,16 @@ from sensor_manager.core.mission_registry import MID, FC
 logger = logging.getLogger(__name__)
 
 
+def _safe_rerun():
+    """Call Streamlit rerun in a way that works across Streamlit versions."""
+    rerun_fn = getattr(st, "experimental_rerun", None) or getattr(st, "rerun", None)
+    if callable(rerun_fn):
+        try:
+            rerun_fn()
+        except Exception:
+            logger.debug("st.rerun call failed", exc_info=True)
+
+
 def _get_own_ip() -> str:
     """Resolve this container's IP on the Docker bridge network.
 
@@ -235,29 +245,131 @@ def main():
     st.divider()
 
     # ══════════════════════════════════════════════════════════════════
-    # Section 3: Live Logs
+    # Section 3: Live Logs (3-column layout)
     # ══════════════════════════════════════════════════════════════════
     st.header("\U0001f4dc Live Logs")
 
-    log_tab1, log_tab2 = st.tabs(["Event Log (EVS)", "Raw Telemetry Hex"])
+    col_events, col_raw, col_json = st.columns([1, 1, 1.2])
 
-    with log_tab1:
-        events = processor.get_events(count=50)
+    # Event Log (EVS)
+    with col_events:
+        st.subheader("Event Log (EVS)")
+        events = processor.get_events(count=100)
         if events:
             log_text = "\n".join(reversed(events))
             st.code(log_text, language="text")
         else:
             st.caption("No events received yet")
 
-    with log_tab2:
-        raw = processor.get_raw_log(count=50)
+    # Raw Telemetry Hex
+    with col_raw:
+        st.subheader("Raw Telemetry Hex")
+        raw = processor.get_raw_log(count=100)
         if raw:
             raw_text = "\n".join(reversed(raw))
             st.code(raw_text, language="text")
         else:
             st.caption("No telemetry received yet")
 
-    # ── Connection & Refresh ──
+    # Telemetry Data (JSON)
+    with col_json:
+        st.subheader("Telemetry Data (JSON)")
+        
+        if st.button("Clear Logs"):
+            try:
+                with processor._lock:
+                    processor.event_log.clear()
+                    processor.raw_log.clear()
+                    processor.radiation_history.clear()
+                    processor.thermal_history.clear()
+            except Exception:
+                pass
+            try:
+                receiver._buffer.clear()
+            except Exception:
+                pass
+            # Reset pagination session state
+            st.session_state.tlm_current_page = 1
+            st.session_state.tlm_last_total = 0
+            _safe_rerun()
+
+        # Initialize pagination state
+        from ground_station.telemetry import parser as tlm_parser
+        from ground_station.telemetry import ui_utils
+
+        if "tlm_current_page" not in st.session_state:
+            st.session_state.tlm_current_page = 1
+        if "tlm_last_total" not in st.session_state:
+            st.session_state.tlm_last_total = 0
+
+
+        recent = receiver.get_recent(200)
+        items_all = list(recent)[-200:]
+        items_all = list(reversed(items_all))
+        
+        # Discover available types from parsed payloads
+        available_types = sorted(
+            { (getattr(e, "parsed", {}) or {}).get("type", "unknown") for e in items_all }
+        )
+        options = ["all"] + [t for t in available_types if t]
+        selected = st.multiselect("Filter by type", options=options, default=["all"], help="Show only selected telemetry/event types")
+
+        filtered_items = ui_utils.filter_items_by_event(items_all, selected)
+        total = len(filtered_items)
+        
+        # Update page on new arrivals
+        new_page, last_total = ui_utils.update_page_on_new(total, st.session_state.tlm_last_total, st.session_state.tlm_current_page, False)
+        st.session_state.tlm_current_page = new_page
+        st.session_state.tlm_last_total = last_total
+
+        total_pages = ui_utils.page_count(total)
+        if st.session_state.tlm_current_page < 1:
+            st.session_state.tlm_current_page = 1
+        if st.session_state.tlm_current_page > total_pages:
+            st.session_state.tlm_current_page = total_pages
+        nav_cols = st.columns([1, 2, 1])
+        with nav_cols[0]:
+            if st.button("Previous") and st.session_state.tlm_current_page > 1:
+                st.session_state.tlm_current_page -= 1
+                _safe_rerun()
+        with nav_cols[1]:
+            st.write(f"Page {st.session_state.tlm_current_page} of {total_pages} (Total Packets: {total})")
+        with nav_cols[2]:
+            if st.button("Next") and st.session_state.tlm_current_page < total_pages:
+                st.session_state.tlm_current_page += 1
+                _safe_rerun()
+
+        if total == 0:
+            st.caption("No parsed telemetry available yet")
+        else:
+            page = st.session_state.tlm_current_page
+            page_items = ui_utils.slice_for_page(filtered_items, page)
+
+            for entry in page_items:
+                parsed = entry.parsed or {}
+                ts_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(entry.timestamp))
+                mid_hex = parsed.get("mid_hex", f"0x{entry.mid:04X}")
+                ptype = parsed.get("type", "unknown")
+                event_text = parsed.get("event_text", "") if parsed.get("type") == "evs" else ""
+
+                prefix = ""
+                et_low = event_text.lower() if event_text else ""
+                if ("error" in et_low) or ("fail" in et_low) or parsed.get("health") == 2:
+                    prefix = "🔴 "
+                elif "cfe_time" in et_low or "to_lab" in et_low or "time" in et_low:
+                    prefix = "🟢 "
+
+                header = f"[{ts_str}] | MID: {mid_hex} | Type: {ptype}"
+                if event_text:
+                    short_evt = event_text if len(event_text) <= 80 else event_text[:77] + "..."
+                    header = f"{header} | Event: {short_evt}"
+
+                with st.expander(f"{prefix}{header}", expanded=False):
+                    parsed_display = dict(parsed)
+                    parsed_display["timestamp"] = ts_str
+                    st.json(parsed_display)
+
+    
     st.divider()
     conn_col1, conn_col2, conn_col3 = st.columns([2, 1, 1])
 
