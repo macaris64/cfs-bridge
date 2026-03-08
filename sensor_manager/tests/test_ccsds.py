@@ -22,6 +22,7 @@ from sensor_manager.core.ccsds_utils import (
     CCSDS_PRI_HDR_SIZE,
     CCSDS_CMD_SEC_HDR_SIZE,
     CCSDS_TLM_SEC_HDR_SIZE,
+    CCSDS_TLM_HDR_SPARE,
     pack_cmd_packet,
     pack_telemetry_packet,
     unpack_cmd_packet,
@@ -268,21 +269,23 @@ class TestRoundTrip:
 class TestTelemetryPacket:
     """Verify pack_telemetry_packet produces correct structure."""
 
+    TLM_HDR_SIZE = CCSDS_PRI_HDR_SIZE + CCSDS_TLM_SEC_HDR_SIZE + CCSDS_TLM_HDR_SPARE
+
     def test_packet_size_no_payload(self):
-        """TLM packet with no payload = 6 (pri) + 6 (sec) = 12 bytes."""
+        """TLM packet with no payload = 6 (pri) + 6 (sec) + 4 (spare) = 16 bytes."""
         pkt = pack_telemetry_packet(MID.TO_LAB_TLM, seconds=0)
-        assert len(pkt) == CCSDS_PRI_HDR_SIZE + CCSDS_TLM_SEC_HDR_SIZE
+        assert len(pkt) == self.TLM_HDR_SIZE
 
     def test_packet_size_with_payload(self):
-        """TLM packet with 8-byte payload = 12 + 8 = 20 bytes."""
+        """TLM packet with 8-byte payload = 16 + 8 = 24 bytes."""
         pkt = pack_telemetry_packet(MID.TO_LAB_TLM, payload=b'\x00' * 8, seconds=0)
-        assert len(pkt) == 20
+        assert len(pkt) == 24
 
     def test_data_length_field(self):
         """data_length = total_bytes - 7."""
         pkt = pack_telemetry_packet(MID.TO_LAB_TLM, payload=b'\x00' * 4, seconds=0)
         _, _, data_length = struct.unpack('!HHH', pkt[:6])
-        total = CCSDS_PRI_HDR_SIZE + CCSDS_TLM_SEC_HDR_SIZE + 4
+        total = self.TLM_HDR_SIZE + 4
         assert data_length == total - 7
 
     def test_seconds_at_correct_offset(self):
@@ -296,6 +299,11 @@ class TestTelemetryPacket:
         pkt = pack_telemetry_packet(MID.TO_LAB_TLM, seconds=0, subseconds=0xABCD)
         subsecs = struct.unpack('!H', pkt[10:12])[0]
         assert subsecs == 0xABCD
+
+    def test_spare_bytes_at_correct_offset(self):
+        """4-byte spare pad at bytes [12:16] is all zeros."""
+        pkt = pack_telemetry_packet(MID.TO_LAB_TLM, payload=b'\xFF' * 4, seconds=0)
+        assert pkt[12:16] == b'\x00\x00\x00\x00'
 
     def test_default_seconds_uses_epoch(self):
         """When seconds is omitted, it defaults to current epoch time."""
@@ -334,6 +342,6 @@ class TestEdgeCases:
             unpack_cmd_packet(b'\x00' * 7)
 
     def test_tlm_unpack_too_short_raises(self):
-        """Telemetry unpack < 12 bytes raises ValueError."""
+        """Telemetry unpack < 16 bytes raises ValueError."""
         with pytest.raises(ValueError):
-            unpack_tlm_packet(b'\x00' * 11)
+            unpack_tlm_packet(b'\x00' * 15)

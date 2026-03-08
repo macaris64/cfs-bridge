@@ -27,6 +27,24 @@ services:
       - CFS_HOST=cfs-flight
       - CFS_CMD_PORT=1234
 
+  ground-station:
+    build:
+      context: .
+      dockerfile: ground_station/Dockerfile
+    container_name: ground-station
+    hostname: ground-station
+    depends_on:
+      - cfs
+    ports:
+      - "8502:8502"
+      - "2234:2234/udp"
+    networks:
+      - cfs-net
+    environment:
+      - CFS_HOST=cfs-flight
+      - CFS_CMD_PORT=1234
+      - GS_TLM_PORT=2234
+
 networks:
   cfs-net:
     driver: bridge

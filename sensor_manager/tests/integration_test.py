@@ -15,6 +15,8 @@ import subprocess
 import sys
 import time
 
+import pytest
+
 from sensor_manager.core.ccsds_utils import pack_cmd_packet
 
 # Test configuration
@@ -94,6 +96,7 @@ def check_bridge_app_log() -> bool:
     return False
 
 
+@pytest.mark.integration
 def test_bridge_receives_noop():
     """Integration test: NOOP command reaches bridge_app and is logged."""
     # 1. Wait for cFS to boot

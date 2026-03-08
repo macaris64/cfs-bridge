@@ -4,5 +4,9 @@ version = "0.1.0"
 requires-python = ">=3.10"
 
 [tool.pytest.ini_options]
-testpaths = ["sensor_manager/tests"]
+testpaths = ["sensor_manager/tests", "ground_station/tests"]
 pythonpath = ["."]
+addopts = "-m 'not integration'"
+markers = [
+    "integration: requires running Docker containers (deselected by default)",
+]

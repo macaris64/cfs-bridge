@@ -37,6 +37,7 @@ CCSDS_SEQ_STANDALONE = 0x03
 CCSDS_PRI_HDR_SIZE = 6
 CCSDS_CMD_SEC_HDR_SIZE = 2
 CCSDS_TLM_SEC_HDR_SIZE = 6
+CCSDS_TLM_HDR_SPARE = 4  # cFS Draco 64-bit alignment pad in CFE_MSG_TelemetryHeader_t
 
 
 @dataclass
@@ -141,10 +142,9 @@ def pack_telemetry_packet(
 ) -> bytes:
     """Pack a complete CCSDS telemetry packet.
 
-    Builds a telemetry packet with a 6-byte secondary header containing
-    a timestamp (Seconds + Subseconds).  The MID value is used directly
-    as the StreamId word — for cFS telemetry the MID already encodes
-    Version=0, Type=0, SecHdr=1.
+    Builds a telemetry packet matching the cFS Draco CFE_MSG_TelemetryHeader_t
+    layout: 6-byte primary + 6-byte secondary (timestamp) + 4-byte spare pad.
+    The MID value is used directly as the StreamId word.
 
     Args:
         mid: Message ID (used as StreamId, e.g. 0x0880 for TO_LAB_TLM)
@@ -159,17 +159,19 @@ def pack_telemetry_packet(
     if seconds is None:
         seconds = int(time.time())
 
-    total_length = CCSDS_PRI_HDR_SIZE + CCSDS_TLM_SEC_HDR_SIZE + len(payload)
+    tlm_hdr_size = (
+        CCSDS_PRI_HDR_SIZE + CCSDS_TLM_SEC_HDR_SIZE + CCSDS_TLM_HDR_SPARE
+    )
+    total_length = tlm_hdr_size + len(payload)
     data_length = total_length - 7
 
-    # Primary header — MID encodes version/type/sec-hdr/APID
     sequence = (CCSDS_SEQ_STANDALONE << 14) | (seq_count & 0x3FFF)
     pri_hdr = struct.pack('!HHH', mid, sequence, data_length)
 
-    # Telemetry secondary header: 4-byte seconds + 2-byte subseconds
     tlm_sec_hdr = struct.pack('!IH', seconds & 0xFFFFFFFF, subseconds & 0xFFFF)
+    spare = b'\x00' * CCSDS_TLM_HDR_SPARE
 
-    return pri_hdr + tlm_sec_hdr + payload
+    return pri_hdr + tlm_sec_hdr + spare + payload
 
 
 def unpack_primary_header(data: bytes) -> dict:
@@ -212,21 +214,25 @@ def unpack_cmd_packet(data: bytes) -> dict:
 
 
 def unpack_tlm_packet(data: bytes) -> dict:
-    """Unpack a CCSDS telemetry packet.
+    """Unpack a CCSDS telemetry packet (cFS Draco layout).
 
-    Telemetry secondary header is 6 bytes: 4-byte seconds + 2-byte subseconds.
+    Layout: 6-byte primary + 6-byte secondary (timestamp) + 4-byte spare.
+    Application payload follows the spare.
 
     Returns:
         Dict with primary header fields plus seconds, subseconds, payload.
     """
-    tlm_total_hdr = CCSDS_PRI_HDR_SIZE + CCSDS_TLM_SEC_HDR_SIZE
+    tlm_total_hdr = (
+        CCSDS_PRI_HDR_SIZE + CCSDS_TLM_SEC_HDR_SIZE + CCSDS_TLM_HDR_SPARE
+    )
     if len(data) < tlm_total_hdr:
         raise ValueError(
             f"Telemetry packet too short: {len(data)} bytes"
         )
     result = unpack_primary_header(data)
+    sec_end = CCSDS_PRI_HDR_SIZE + CCSDS_TLM_SEC_HDR_SIZE
     seconds, subseconds = struct.unpack(
-        '!IH', data[CCSDS_PRI_HDR_SIZE:tlm_total_hdr]
+        '!IH', data[CCSDS_PRI_HDR_SIZE:sec_end]
     )
     result['seconds'] = seconds
     result['subseconds'] = subseconds

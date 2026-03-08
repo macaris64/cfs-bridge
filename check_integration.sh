@@ -93,6 +93,27 @@ else
 fi
 
 ###############################################################################
+# Step 3b: Enable TO_LAB telemetry output
+###############################################################################
+echo ""
+echo "--- Enable TO_LAB Telemetry Output ---"
+
+docker exec sensor-manager python3 -c "
+from sensor_manager.core.ccsds_utils import pack_cmd_packet
+import socket
+# TO_LAB_CMD_MID=0x1880, TO_LAB_OUTPUT_ENABLE_CC=6
+# Payload: 16-byte null-padded IP string
+payload = b'127.0.0.1\x00' + b'\x00' * 7  # 16 bytes total
+pkt = pack_cmd_packet(0x1880, 6, payload=payload)
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.sendto(pkt, ('cfs-flight', 1234))
+print('Sent TO_LAB OUTPUT_ENABLE (dest=127.0.0.1)')
+" 2>&1 || fail "Failed to send TO_LAB enable command"
+
+sleep 2
+info "TO_LAB telemetry output enable command sent"
+
+###############################################################################
 # Step 4: Send nominal radiation value (50.0 mSv/h - below threshold)
 ###############################################################################
 echo ""

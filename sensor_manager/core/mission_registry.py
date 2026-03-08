@@ -21,12 +21,16 @@ class MID:
     """
 
     # ── Command MIDs (Type=1, SecHdr=1 → base 0x1800) ──
+    TO_LAB_CMD       = 0x1880   # TO_LAB command ingest (enable output, etc.)
     RADIATION_APP    = 0x1882   # Radiation environment monitor
     THERMAL_APP      = 0x1883   # Thermal management system
     SOLAR_ARRAY_APP  = 0x1890   # Solar array drive controller
 
     # ── Telemetry MIDs (Type=0, SecHdr=1 → base 0x0800) ──
+    RAD_APP_TLM      = 0x0882   # Processed radiation telemetry
+    THERM_APP_TLM    = 0x0883   # Processed thermal telemetry
     TO_LAB_TLM       = 0x0880   # TO_LAB housekeeping telemetry
+    CFE_EVS_TLM      = 0x0808   # cFE Event Service messages
 
 
 class FC:
@@ -47,20 +51,28 @@ class FC:
     SOLAR_ARRAY_OPEN  = 5
     SOLAR_ARRAY_CLOSE = 6
 
+    # TO_LAB application-specific codes
+    TO_LAB_OUTPUT_ENABLE = 6   # Enable telemetry output (requires IP payload)
+
 
 # ── Human-readable name lookups for logging and diagnostics ──
 
 MID_NAME = {
+    MID.TO_LAB_CMD:      "TO_LAB_CMD",
     MID.RADIATION_APP:   "RADIATION_APP",
     MID.THERMAL_APP:     "THERMAL_APP",
     MID.SOLAR_ARRAY_APP: "SOLAR_ARRAY_APP",
+    MID.RAD_APP_TLM:     "RAD_APP_TLM",
+    MID.THERM_APP_TLM:   "THERM_APP_TLM",
     MID.TO_LAB_TLM:      "TO_LAB_TLM",
+    MID.CFE_EVS_TLM:     "CFE_EVS_TLM",
 }
 
 FC_NAME = {
-    FC.NOOP:              "NOOP",
-    FC.RESET:             "RESET",
-    FC.SEND_DATA:         "SEND_DATA",
-    FC.SOLAR_ARRAY_OPEN:  "SOLAR_ARRAY_OPEN",
-    FC.SOLAR_ARRAY_CLOSE: "SOLAR_ARRAY_CLOSE",
+    FC.NOOP:                "NOOP",
+    FC.RESET:               "RESET",
+    FC.SEND_DATA:           "SEND_DATA",
+    FC.SOLAR_ARRAY_OPEN:    "SOLAR_ARRAY_OPEN",
+    FC.SOLAR_ARRAY_CLOSE:   "SOLAR_ARRAY_CLOSE",
+    FC.TO_LAB_OUTPUT_ENABLE: "TO_LAB_OUTPUT_ENABLE",
 }

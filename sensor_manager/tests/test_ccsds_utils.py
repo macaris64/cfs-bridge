@@ -212,19 +212,20 @@ class TestUnpackTlmPacket:
     def test_unpack_mock_telemetry(self):
         """Construct a mock telemetry packet and verify unpacking."""
         # Primary header: TLM type, APID 0x083
+        # Total = 6 pri + 6 sec + 4 spare + 4 payload = 20
         hdr = CCSDSPrimaryHeader(
             pkt_type=CCSDS_TYPE_TLM,
             sec_hdr_flag=1,
             apid=0x083,
             seq_flags=CCSDS_SEQ_STANDALONE,
             seq_count=10,
-            data_length=12 - 7 + 4,  # 6 sec hdr + 4 payload - 1
+            data_length=20 - 7,
         )
         pri = hdr.pack()
-        # Telemetry secondary header: seconds=1000, subseconds=500
         tlm_sec = struct.pack('!IH', 1000, 500)
+        spare = b'\x00' * 4
         payload = b'\x01\x02\x03\x04'
-        pkt = pri + tlm_sec + payload
+        pkt = pri + tlm_sec + spare + payload
 
         result = unpack_tlm_packet(pkt)
         assert result['pkt_type'] == CCSDS_TYPE_TLM
@@ -234,9 +235,9 @@ class TestUnpackTlmPacket:
         assert result['payload'] == payload
 
     def test_too_short_raises(self):
-        """Unpacking fewer than 12 bytes should raise ValueError."""
+        """Unpacking fewer than 16 bytes should raise ValueError."""
         with pytest.raises(ValueError, match="too short"):
-            unpack_tlm_packet(b'\x00' * 11)
+            unpack_tlm_packet(b'\x00' * 15)
 
 
 class TestEdgeCases:
